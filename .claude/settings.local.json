@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx playwright:*)",
+      "mcp__ide__getDiagnostics"
+    ]
+  }
+}

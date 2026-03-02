@@ -1,0 +1,31 @@
+{
+  "name": "playwright-automation-framework",
+  "version": "1.0.0",
+  "description": "Production-ready Playwright automation framework using Page Object Model",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:headless": "playwright test --headed=false",
+    "test:chromium": "playwright test --project=chromium",
+    "test:firefox": "playwright test --project=firefox",
+    "test:webkit": "playwright test --project=webkit",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "test:wikipedia": "playwright test tests/wikipedia.spec.js"
+  },
+  "keywords": [
+    "playwright",
+    "automation",
+    "testing",
+    "POM",
+    "e2e"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.42.0",
+    "dotenv": "^16.4.5"
+  }
+}
