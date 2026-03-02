@@ -1,6 +1,6 @@
 # Playwright Automation Framework
 
-A production-ready, scalable E2E automation framework built with **Playwright Test** and the **Page Object Model (POM)** pattern.
+A production-ready, scalable E2E automation framework built with **Playwright Test** and the **Page Object Model (POM)** pattern. Verified green across **Chromium, Firefox, and WebKit** (15/15 tests).
 
 ---
 
@@ -9,17 +9,17 @@ A production-ready, scalable E2E automation framework built with **Playwright Te
 ```
 playwright-framework/
 ├── config/
-│   └── env.config.js          # Environment variables & timeout constants
+│   └── env.config.js           # Environment variables & timeout constants
 ├── pages/
 │   └── WikipediaPage.js        # POM — locators + actions for Wikipedia
 ├── tests/
 │   └── wikipedia.spec.js       # Test scenarios (thin — no DOM logic here)
 ├── utils/
-│   helpers.js                  # Reusable utility functions
+│   └── helpers.js              # Reusable utility functions
 ├── reports/                    # Auto-generated (gitignored)
-│   ├── html-report/
-│   ├── junit/
-│   └── test-results/
+│   ├── html-report/            # Rich visual report (npx playwright show-report)
+│   ├── junit/                  # JUnit XML for CI dashboards
+│   └── test-results/           # Screenshots, videos, traces
 ├── .env.example                # Copy to .env and fill in values
 ├── .gitignore
 ├── playwright.config.js        # Central Playwright configuration
@@ -58,7 +58,7 @@ cp .env.example .env
 
 ## Running Tests
 
-### Run all tests (headless, all browsers)
+### Run all tests — headless, all browsers (default)
 ```bash
 npm test
 ```
@@ -99,29 +99,111 @@ npm run test:ui
 
 ## Reports
 
-An **HTML report** is generated automatically after every run.
+Three reporters run simultaneously on every execution:
+
+| Reporter | Output | Purpose |
+|----------|--------|---------|
+| `list`   | Terminal | Human-readable pass/fail output |
+| `html`   | `reports/html-report/` | Rich visual report with screenshots and traces |
+| `junit`  | `reports/junit/results.xml` | CI integration (Jenkins, GitHub Actions) |
 
 ```bash
-# Open the last report in your browser
+# Open the HTML report after a run
 npm run report
 # or
 npx playwright show-report reports/html-report
 ```
 
-A **JUnit XML** report is written to `reports/junit/results.xml` — import this into Jenkins, GitHub Actions, or any CI tool.
+On failure, Playwright automatically captures:
+- **Screenshot** — saved to `reports/test-results/`
+- **Video** — recorded on the first retry
+- **Trace** — attached on the first retry (open with `npx playwright show-trace`)
+
+---
+
+## Test Suite
+
+All tests live in `tests/wikipedia.spec.js` and target `https://www.wikipedia.org`.
+
+| Test ID | Description | Assertions |
+|---------|-------------|------------|
+| **TC-01** | Search via **Enter key** | Page title, `<h1>` heading, URL slug |
+| **TC-02** | Search via **Search button** | Page title (regex), heading visible + text, URL (regex) |
+| **TC-03** | Homepage smoke test | Search input visible & enabled, page title matches Wikipedia |
+| **TC-04** | Data-driven search loop (`JavaScript`, `Automation testing`) | URL changed, heading visible, URL matches keyword pattern |
+
+**Results (last run): 15/15 passed in ~30 s across Chromium, Firefox, WebKit.**
+
+---
+
+## Architecture
+
+### Page Object Model (`pages/WikipediaPage.js`)
+
+All DOM interaction is encapsulated here. Tests never query the DOM directly.
+
+```
+WikipediaPage
+├── constructor(page)         — assigns locators as instance properties
+│   ├── searchInput           — #searchInput (homepage)
+│   ├── searchButton          — role="button" name="Search" (homepage)
+│   └── articleHeading        — #firstHeading (article page)
+├── goto()                    — navigates to baseURL with domcontentloaded
+├── search(term, method)      — fills input, submits, waits for URL change
+├── getArticleHeadingText()   — returns <h1> inner text
+├── getPageTitle()            — returns document <title>
+└── getCurrentUrl()           — returns current page URL (sync)
+```
+
+### Key design decisions
+
+| Decision | Reason |
+|----------|--------|
+| `waitUntil: 'domcontentloaded'` in `goto()` | Avoids stalling on slow third-party font/image CDNs, especially on WebKit/Windows |
+| `waitForURL(url => url !== urlBefore)` in `search()` | `waitForLoadState('domcontentloaded')` resolves immediately if the page is already loaded; this predicate guarantees navigation actually occurred |
+| Role-based locators (`getByRole`) | Resilient to CSS/class changes; aligned with accessibility best practices |
+| `expect.soft()` for TC-04 URL slug | Wikipedia may redirect to a related article; soft assertion lets the test continue and report the discrepancy without hard-failing |
+| Viewport-only screenshot (no `fullPage`) | WebKit enforces a hard 32,767 px dimension limit that long articles exceed |
+
+### Utilities (`utils/helpers.js`)
+
+| Function | Description |
+|----------|-------------|
+| `attachScreenshot(page, testInfo, label)` | Captures a viewport screenshot and attaches it to the HTML report |
+| `toWikipediaSlug(term)` | Converts `"Playwright (software)"` → `"Playwright_(software)"` |
+| `containsIgnoreCase(haystack, needle)` | Case-insensitive string contains check |
+| `waitForNetworkIdle(page, timeout)` | Waits for network idle state |
+| `highlightElement(locator)` | Gold outline flash for video recordings |
+| `randomString(length)` | Generates unique test data strings |
+
+---
+
+## Timeout Configuration
+
+| Setting | Value | Scope |
+|---------|-------|-------|
+| Test timeout | 60 s | All browsers |
+| Navigation timeout | 45 s | Chromium, Firefox |
+| Action timeout | 20 s | Chromium, Firefox |
+| Navigation timeout | 60 s | WebKit (override) |
+| Action timeout | 30 s | WebKit (override) |
+
+> WebKit on Windows cold-starts significantly slower than Chromium/Firefox and requires higher timeouts.
 
 ---
 
 ## Environment Variables
 
-| Variable              | Default                        | Description                         |
-|-----------------------|--------------------------------|-------------------------------------|
-| `BASE_URL`            | `https://www.wikipedia.org`    | Application base URL                |
-| `DEFAULT_SEARCH_TERM` | `Playwright`                   | Article searched in default tests   |
-| `NAVIGATION_TIMEOUT`  | `30000`                        | Navigation timeout in ms            |
-| `ACTION_TIMEOUT`      | `10000`                        | Action timeout in ms                |
-| `ELEMENT_TIMEOUT`     | `5000`                         | Element wait timeout in ms          |
-| `CI`                  | `false`                        | Enables retries & single-worker mode|
+Copy `.env.example` to `.env` and override values as needed.
+
+| Variable              | Default                     | Description                          |
+|-----------------------|-----------------------------|--------------------------------------|
+| `BASE_URL`            | `https://www.wikipedia.org` | Application base URL                 |
+| `DEFAULT_SEARCH_TERM` | `Playwright`                | Article searched in TC-01 / TC-02    |
+| `NAVIGATION_TIMEOUT`  | `30000`                     | Navigation timeout in ms (env layer) |
+| `ACTION_TIMEOUT`      | `10000`                     | Action timeout in ms (env layer)     |
+| `ELEMENT_TIMEOUT`     | `5000`                      | Element wait timeout in ms           |
+| `CI`                  | `false`                     | Enables retries & single-worker mode |
 
 ---
 
@@ -129,35 +211,71 @@ A **JUnit XML** report is written to `reports/junit/results.xml` — import this
 
 ### Add a new page object
 1. Create `pages/MyPage.js` following the `WikipediaPage` pattern.
-2. Inject the `page` fixture in the constructor.
-3. Import and use it in your test file.
+2. Accept `page` in the constructor and assign locators as instance properties.
+3. Import and instantiate it inside the test's `beforeEach`.
 
 ### Add a new test file
 1. Create `tests/myFeature.spec.js`.
 2. Import the relevant page object(s) and utilities.
-3. Playwright auto-discovers any `*.spec.js` inside `tests/`.
+3. Playwright auto-discovers any `*.spec.js` file inside `tests/`.
+
+### Add a new browser project
+Uncomment the mobile presets in `playwright.config.js`:
+```js
+// {
+//   name: 'mobile-chrome',
+//   use: { ...devices['Pixel 5'] },
+// },
+// {
+//   name: 'mobile-safari',
+//   use: { ...devices['iPhone 13'] },
+// },
+```
 
 ---
 
-## CI Integration (GitHub Actions example)
+## CI Integration (GitHub Actions)
 
 ```yaml
-- name: Install dependencies
-  run: npm ci
+name: Playwright Tests
 
-- name: Install Playwright browsers
-  run: npx playwright install --with-deps
+on: [push, pull_request]
 
-- name: Run tests
-  run: npm test
-  env:
-    CI: true
-    BASE_URL: ${{ secrets.BASE_URL }}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-- name: Upload HTML report
-  uses: actions/upload-artifact@v4
-  if: always()
-  with:
-    name: playwright-report
-    path: reports/html-report/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run tests
+        run: npm test
+        env:
+          CI: true
+          BASE_URL: ${{ secrets.BASE_URL }}
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-html-report
+          path: reports/html-report/
+          retention-days: 30
+
+      - name: Upload JUnit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-junit
+          path: reports/junit/results.xml
 ```
